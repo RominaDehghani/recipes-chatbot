@@ -343,7 +343,6 @@ if "messages" not in st.session_state:
 
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
-    # Use different avatars or styling if needed, but the CSS handles the bubble alignment
     with st.chat_message(message["role"]):
         st.markdown(message["content"], unsafe_allow_html=True)
 
@@ -353,26 +352,43 @@ if prompt := st.chat_input("Enter ingredients (e.g., chicken, mushrooms, cream).
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # Use a placeholder for the assistant's response to enable dynamic content
+    # This ensures the spinner appears *before* processing and is replaced by the actual content
     with st.chat_message("assistant"):
+        message_placeholder = st.empty() # Create an empty slot for the message
         with st.spinner("Thinking about recipes, I'll prepare them shortly..."):
-            user_input_en = prompt.strip() # Now directly using English input
+            user_input_en = prompt.strip()
 
             if not user_input_en:
-                st.markdown('Please specify the ingredients.')
-                st.stop()
+                response_content = 'Please specify the ingredients.'
+                message_placeholder.markdown(response_content)
+                st.session_state.messages.append({"role": "assistant", "content": response_content})
+                st.stop() # Stop further execution for this run
+
+            # --- Extract requested recipe count ---
+            requested_num_recipes = 1 # Default to 1 recipe
+            match = re.search(r'(?:give me|show me|find me|I need)\s*(\d+)\s*recipes?', user_input_en, re.IGNORECASE)
+            if match:
+                try:
+                    num = int(match.group(1))
+                    requested_num_recipes = max(1, min(num, 3)) # Enforce min 1, max 3
+                    # Optionally remove the number request from the input passed to retrieval/Gemini
+                    user_input_en = re.sub(r'(?:give me|show me|find me|I need)\s*\d+\s*recipes?', '', user_input_en, 1, re.IGNORECASE).strip()
+                except ValueError:
+                    pass # Keep default 1 if parsing fails
 
             # --- Intent Check ---
             intent_prompt = f"User's request: \"{user_input_en}\". Is this request related to a recipe or ingredient query? Answer only 'YES' or 'NO'."
             intent_response = call_gemini(intent_prompt)
             
             if "NO" in intent_response.upper():
-                st.markdown("Sorry, I can only help with recipes. Please ask a food-related question. 🧑‍🍳")
-                st.session_state.messages.append({"role": "assistant", "content": "Sorry, I can only help with recipes. Please ask a food-related question. 🧑‍🍳"})
-                st.stop()
+                response_content = "Sorry, I can only help with recipes. Please ask a food-related question. 🧑‍🍳"
+                message_placeholder.markdown(response_content) # Display directly
+                st.session_state.messages.append({"role": "assistant", "content": response_content})
+                st.stop() # Stop further execution for this run
 
             # Retrieve recipes using the English input
-            top_n_for_retrieval = 1 # Default to 1 recipe, can be adjusted
-            recipes = retrieve_recipes(user_input_en, top_n=top_n_for_retrieval)
+            recipes = retrieve_recipes(user_input_en, top_n=requested_num_recipes)
             
             context = ""
             if recipes.empty:
@@ -396,8 +412,8 @@ if prompt := st.chat_input("Enter ingredients (e.g., chicken, mushrooms, cream).
                                  f"Referring to the available recipes below, suggest the most suitable recipes for the user's ingredients. If you use a recipe as is, please maintain the given structure. If you generate a new idea, create a recipe in a similar format.\n\n" \
                                  f"Available Recipes:\n{context}\n\n" \
                                  f"Please respond in English, with a friendly and motivating tone. Format the recipes using HTML tags (h3 for title, b tags for 'Ingredients:' and 'Instructions:', ul/li for ingredient list, ol/li for steps). You can use a short and cheerful introductory sentence if needed. For example: 'Great choice! Let's see what we can make with these ingredients...'" \
-                                 f"Suggest only {top_n_for_retrieval} recipe(s)."
+                                 f"Suggest only {requested_num_recipes} recipe(s)."
 
             generated_response = call_gemini(gemini_prompt)
-            st.markdown(generated_response, unsafe_allow_html=True)
+            message_placeholder.markdown(generated_response, unsafe_allow_html=True) # Replace spinner with actual content
             st.session_state.messages.append({"role": "assistant", "content": generated_response})
