@@ -98,7 +98,7 @@ def retrieve_recipes(user_input_en, top_n=3):
     return df.iloc[top_indices]
 
 # --- Gemini API wrapper ---
-def call_gemini(prompt, model_name='gemini-1.5-flash'): # Updated to a faster model if available
+def call_gemini(prompt, model_name='gemini-2.5-flash'): # Updated to a faster model if available
     """Calls Gemini and returns the text result. Returns a mock response if genai is unavailable."""
     if not GENAI_AVAILABLE or not GEMINI_API_KEY:
         mock_response = (
