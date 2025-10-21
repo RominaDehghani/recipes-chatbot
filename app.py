@@ -7,9 +7,6 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import re
 
-# No googletrans, the app will be entirely in English.
-# Removed TRANSLATOR_AVAILABLE and related logic.
-
 try:
     import google.generativeai as genai
     GENAI_AVAILABLE = True
@@ -65,7 +62,7 @@ def load_and_process_data():
         for c in expected_cols:
             if c not in df_.columns:
                 st.error(f"Column '{c}' not found in CSV. Please check your file.")
-                return pd.DataFrame(), None
+                return pd.DataFrame(), None, None # Return None for vectorizer and X if df is problematic
         df_ = df_[expected_cols].dropna().reset_index(drop=True)
 
     vectorizer_ = TfidfVectorizer()
@@ -84,6 +81,11 @@ def retrieve_recipes(user_input_en, top_n=3):
     if X is None or df.empty:
         return pd.DataFrame()
     
+    # Ensure vectorizer is fitted before transforming
+    if not hasattr(vectorizer, 'idf_'):
+        st.warning("TF-IDF Vectorizer is not fitted. Cannot retrieve recipes.")
+        return pd.DataFrame()
+
     input_vec = vectorizer.transform([user_input_en])
     similarity = cosine_similarity(input_vec, X).flatten()
     
@@ -96,7 +98,7 @@ def retrieve_recipes(user_input_en, top_n=3):
     return df.iloc[top_indices]
 
 # --- Gemini API wrapper ---
-def call_gemini(prompt, model_name='gemini-2.5-flash'): 
+def call_gemini(prompt, model_name='gemini-1.5-flash'): # Updated to a faster model if available
     """Calls Gemini and returns the text result. Returns a mock response if genai is unavailable."""
     if not GENAI_AVAILABLE or not GEMINI_API_KEY:
         mock_response = (
@@ -352,19 +354,32 @@ if prompt := st.chat_input("Enter ingredients (e.g., chicken, mushrooms, cream).
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Use a placeholder for the assistant's response to enable dynamic content
-    # This ensures the spinner appears *before* processing and is replaced by the actual content
+    user_input_en = prompt.strip()
+
+    # --- Handle empty input ---
+    if not user_input_en:
+        with st.chat_message("assistant"):
+            response_content = 'Please specify the ingredients.'
+            st.markdown(response_content, unsafe_allow_html=True) # Directly display
+            st.session_state.messages.append({"role": "assistant", "content": response_content})
+        st.stop() # Stop further execution for this run
+
+    # --- Intent Check (BEFORE spinner) ---
+    intent_prompt = f"User's request: \"{user_input_en}\". Is this request related to a recipe or ingredient query? Answer only 'YES' or 'NO'."
+    intent_response = call_gemini(intent_prompt)
+    
+    # If the intent is NOT a recipe/ingredient query
+    if "NO" in intent_response.upper() and "YES" not in intent_response.upper():
+        with st.chat_message("assistant"):
+            response_content = "Sorry, I can only help with recipes. Please ask a food-related question. 🧑‍🍳"
+            st.markdown(response_content, unsafe_allow_html=True) # Display directly, no spinner needed
+            st.session_state.messages.append({"role": "assistant", "content": response_content})
+        st.stop() # Stop further execution for this run
+
+    # --- If intent is a recipe/ingredient query, proceed with spinner and recipe logic ---
     with st.chat_message("assistant"):
         message_placeholder = st.empty() # Create an empty slot for the message
         with st.spinner("Thinking about recipes, I'll prepare them shortly..."):
-            user_input_en = prompt.strip()
-
-            if not user_input_en:
-                response_content = 'Please specify the ingredients.'
-                message_placeholder.markdown(response_content)
-                st.session_state.messages.append({"role": "assistant", "content": response_content})
-                st.stop() # Stop further execution for this run
-
             # --- Extract requested recipe count ---
             requested_num_recipes = 1 # Default to 1 recipe
             match = re.search(r'(?:give me|show me|find me|I need)\s*(\d+)\s*recipes?', user_input_en, re.IGNORECASE)
@@ -377,19 +392,6 @@ if prompt := st.chat_input("Enter ingredients (e.g., chicken, mushrooms, cream).
                 except ValueError:
                     pass # Keep default 1 if parsing fails
 
-            # --- Intent Check ---
-            intent_prompt = f"User's request: \"{user_input_en}\". Is this request related to a recipe or ingredient query? Answer only 'YES' or 'NO'."
-            intent_response = call_gemini(intent_prompt)
-            
-            if "NO" in intent_response.upper():
-                response_content = "Sorry, I can only help with recipes."
-                message_placeholder.markdown(response_content) # Display directly
-                st.session_state.messages.append({"role": "assistant", "content": response_content})
-                st.stop() # Stop further execution for this run
-                response_content = "Please ask a food-related question. 🧑‍🍳"
-                message_placeholder.markdown(response_content) # Display directly
-                st.session_state.messages.append({"role": "assistant", "content": response_content})
-
             # Retrieve recipes using the English input
             recipes = retrieve_recipes(user_input_en, top_n=requested_num_recipes)
             
@@ -399,10 +401,14 @@ if prompt := st.chat_input("Enter ingredients (e.g., chicken, mushrooms, cream).
             else:
                 rows = []
                 for _, row in recipes.iterrows():
+                    # Sanitize instructions to handle cases where they might not start with a number
+                    instructions_list = re.split(r'\d+\.\s*', str(row['Instructions']))
+                    cleaned_instructions = [inst.strip() for inst in instructions_list if inst.strip()]
+                    
                     rows.append(
                         f"<h3>{row['Title']}</h3>"
-                        f"<b>Ingredients:</b>\n<ul><li>" + "</li><li>".join(row['Ingredients'].split(', ')) + "</li></ul>\n"
-                        f"<b>Instructions:</b>\n<ol><li>" + "</li><li>".join(re.split(r'\d+\.\s*', str(row['Instructions']))[1:]) + "</li></ol>"
+                        f"<b>Ingredients:</b>\n<ul><li>" + "</li><li>".join(str(row['Ingredients']).split(', ')) + "</li></ul>\n"
+                        f"<b>Instructions:</b>\n<ol><li>" + "</li><li>".join(cleaned_instructions) + "</li></ol>"
                     )
                 context = "\n<hr>\n".join(rows)
 
