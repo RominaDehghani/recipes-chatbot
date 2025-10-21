@@ -7,14 +7,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import re
 
-# Import googletrans for translation
-try:
-    from googletrans import Translator
-    TRANSLATOR_AVAILABLE = True
-    translator = Translator()
-except Exception as e:
-    TRANSLATOR_AVAILABLE = False
-    st.warning(f"Uyarı: googletrans kütüphanesi yüklenemedi: {e}. Çeviri katmanı devre dışı.")
+# No googletrans, the app will be entirely in English.
+# Removed TRANSLATOR_AVAILABLE and related logic.
 
 try:
     import google.generativeai as genai
@@ -22,23 +16,23 @@ try:
 except Exception:
     GENAI_AVAILABLE = False
 
-# Load .env (Streamlit Cloud'da secret olarak yüklenecek)
+# Load .env (for local development, Streamlit Cloud uses Secrets)
 load_dotenv()
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# Gemini API yapılandırması
+# Gemini API configuration
 def configure_genai():
     if not GENAI_AVAILABLE:
-        st.error("Google Generative AI kütüphanesi yüklü değil.")
+        st.error("Google Generative AI library is not installed.")
         return False
     if not GEMINI_API_KEY:
-        st.error("GEMINI_API_KEY bulunamadı. Lütfen .env dosyasını kontrol edin veya Streamlit Secrets'a ekleyin.")
+        st.error("GEMINI_API_KEY not found. Please check your .env file or add it to Streamlit Secrets.")
         return False
     try:
         genai.configure(api_key=GEMINI_API_KEY)
         return True
     except Exception as e:
-        st.error(f"Gemini API yapılandırma hatası: {e}")
+        st.error(f"Gemini API configuration error: {e}")
         return False
 
 # --- Data & Retrieval Setup ---
@@ -46,7 +40,7 @@ def configure_genai():
 def load_and_process_data():
     CSV_PATH = os.path.join(os.path.dirname(__file__), '13k-recipes.csv')
     if not os.path.exists(CSV_PATH):
-        st.warning("13k-recipes.csv dosyası bulunamadı. Örnek veri kullanılıyor.")
+        st.warning("13k-recipes.csv not found. Using sample data.")
         df_ = pd.DataFrame({
             'Title': ['Chicken Stir-fry', 'Lentil Soup', 'Pasta Salad', 'Spicy Shrimp Pasta', 'Vegetable Curry'],
             'Ingredients': ['Chicken, Bell Pepper, Onion, Tomato, Spices', 'Lentil, Onion, Carrot, Tomato Paste, Mint', 'Pasta, Mayonnaise, Peas, Carrot', 'Shrimp, Pasta, Garlic, Chili, Olive Oil', 'Mixed Vegetables, Coconut Milk, Curry Powder'],
@@ -70,8 +64,8 @@ def load_and_process_data():
         expected_cols = ['Title', 'Ingredients', 'Instructions', 'Cleaned_Ingredients']
         for c in expected_cols:
             if c not in df_.columns:
-                st.error(f"CSV dosyasında '{c}' sütunu bulunamadı. Lütfen dosyanızı kontrol edin.")
-                return pd.DataFrame(), None # Hata durumunda boş DataFrame ve None dön
+                st.error(f"Column '{c}' not found in CSV. Please check your file.")
+                return pd.DataFrame(), None
         df_ = df_[expected_cols].dropna().reset_index(drop=True)
 
     vectorizer_ = TfidfVectorizer()
@@ -79,21 +73,21 @@ def load_and_process_data():
         X_ = vectorizer_.fit_transform(df_['Cleaned_Ingredients'].astype(str))
     else:
         X_ = None
-        st.warning("DataFrame boş, TF-IDF vektörleyicisi oluşturulamadı.")
+        st.warning("DataFrame is empty, TF-IDF vectorizer could not be created.")
     
     return df_, vectorizer_, X_
 
 df, vectorizer, X = load_and_process_data()
 
 def retrieve_recipes(user_input_en, top_n=3):
-    """Kullanıcı girdisine benzer top_n tarifi (pandas DataFrame) döndürür."""
+    """Returns top_n recipes (pandas DataFrame) similar to the user input."""
     if X is None or df.empty:
-        return pd.DataFrame() # Veri yoksa boş DataFrame dön
+        return pd.DataFrame()
     
     input_vec = vectorizer.transform([user_input_en])
     similarity = cosine_similarity(input_vec, X).flatten()
     
-    min_similarity = 0.05  # Gerekirse benzerlik eşiğini ayarlayabilirsiniz
+    min_similarity = 0.05
     matching_indices = [i for i, score in enumerate(similarity) if score > min_similarity]
     
     matching_indices.sort(key=lambda i: similarity[i], reverse=True)
@@ -101,20 +95,20 @@ def retrieve_recipes(user_input_en, top_n=3):
     top_indices = matching_indices[:top_n]
     return df.iloc[top_indices]
 
-# --- Gemini API sarmalayıcı ---
+# --- Gemini API wrapper ---
 def call_gemini(prompt, model_name='gemini-2.5-flash'): 
-    """Gemini'yi çağırır ve metin sonucu döndürür. genai mevcut değilse, örnek (mock) yanıt döner."""
+    """Calls Gemini and returns the text result. Returns a mock response if genai is unavailable."""
     if not GENAI_AVAILABLE or not GEMINI_API_KEY:
         mock_response = (
-            "Merhaba! Gemini API'sine erişim şu anda mümkün değil, bu yüzden size örnek bir yanıt veriyorum:\n\n"
-            "<b>Malzemelerle ilgili tarif önerileri:</b>\n\n"
-            "<h3>1. Basit Tavuk Sote</h3>"
-            "Bu tarif, elinizdeki tavuk, biber ve soğanla harika bir sote yapmanızı sağlar.\n"
-            "<b>Malzemeler:</b>\n"
-            "<ul><li>Tavuk</li><li>Biber</li><li>Soğan</li><li>Domates</li><li>Baharatlar</li></ul>\n"
-            "<b>Yapılışı:</b>\n"
-            "<ol><li>Tavukları küp küp doğrayın.</li><li>Biber ve soğanla birlikte zeytinyağında soteleyin.</li><li>Tuz, karabiber ve kekik ekleyin.</li><li>Yanında pilavla servis edebilirsiniz.</li></ol>\n\n"
-            "Afiyet olsun!"
+            "Hello! Access to the Gemini API is currently unavailable, so I'm giving you a sample response:\n\n"
+            "<b>Recipe suggestions based on ingredients:</b>\n\n"
+            "<h3>1. Simple Chicken Stir-fry</h3>"
+            "This recipe allows you to make a great stir-fry with chicken, bell pepper, and onion.\n"
+            "<b>Ingredients:</b>\n"
+            "<ul><li>Chicken</li><li>Bell Pepper</li><li>Onion</li><li>Tomato</li><li>Spices</li></ul>\n"
+            "<b>Instructions:</b>\n"
+            "<ol><li>Cut the chicken into cubes.</li><li>Sauté with bell pepper and onion in olive oil.</li><li>Add salt, black pepper, and thyme.</li><li>Serve with rice.</li></ol>\n\n"
+            "Enjoy your meal!"
         )
         return mock_response
 
@@ -125,17 +119,17 @@ def call_gemini(prompt, model_name='gemini-2.5-flash'):
             return response.text
         return str(response)
     except Exception as e:
-        st.error(f"Üzgünüm, Gemini API ile iletişim kurarken bir sorun oluştu: {str(e)}")
-        return f"Üzgünüm, Gemini API ile iletişim kurarken bir sorun oluştu: {str(e)}"
+        st.error(f"Sorry, an issue occurred while communicating with the Gemini API: {str(e)}")
+        return f"Sorry, an issue occurred while communicating with the Gemini API: {str(e)}"
 
-# --- Streamlit Uygulaması ---
+# --- Streamlit App ---
 st.set_page_config(
-    page_title="Lezzetli Tarif Asistanı",
+    page_title="Delicious Recipe Assistant",
     page_icon="🍲",
     layout="centered"
 )
 
-# Custom CSS for a nicer look
+# Custom CSS for a nicer look and chat alignment
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Open+Sans:wght@400;600&display=swap');
@@ -187,26 +181,50 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         border-top-left-radius: 18px;
         border-top-right-radius: 18px;
-        margin-bottom: 0px !important; /* Remove space below header */
+        margin-bottom: 0px !important;
     }
 
     /* Chat messages container */
-    [data-testid="stVerticalBlock"] > div:first-child { /* Targets the main content block */
+    [data-testid="stVerticalBlock"] > div:first-child {
         padding-top: 0px !important;
     }
-    .stChatMessage {
+    
+    /* Override Streamlit's default chat message styling for alignment */
+    [data-testid="chat-message-container"] {
         margin-bottom: 18px;
         display: flex;
         align-items: flex-start;
-        padding: 0 10px; /* Add some padding to messages */
-    }
-    .stChatMessage.user {
-        justify-content: flex-end;
-    }
-    .stChatMessage.assistant {
-        justify-content: flex-start;
+        padding: 0 10px;
+        gap: 10px; /* Space between avatar and message */
     }
 
+    /* Assistant (bot) message alignment (left) */
+    [data-testid="chat-message-container"].stChatMessage:has(.stMarkdownContainer) {
+        justify-content: flex-start;
+    }
+    
+    /* User message alignment (right) */
+    [data-testid="chat-message-container"].stChatMessage:has(.stMarkdownContainer) > div:first-child:empty { /* Targets the empty avatar div for user messages */
+        order: 2; /* Move avatar to the right */
+    }
+    [data-testid="chat-message-container"].stChatMessage:has(.stMarkdownContainer) > div:nth-child(2) { /* Targets the message content div */
+        order: 1; /* Move message content to the left */
+    }
+    [data-testid="chat-message-container"].stChatMessage.st-emotion-cache-1c7v0u5.user { /* Specific selector for user message bubble */
+        flex-direction: row-reverse; /* Align user bubble to the right */
+        justify-content: flex-end;
+    }
+    [data-testid="chat-message-container"].stChatMessage.st-emotion-cache-1c7v0u5.user .stMarkdownContainer {
+        border-bottom-right-radius: 8px; /* Tail effect for user bubble */
+        border-bottom-left-radius: 25px; /* Adjust if needed */
+    }
+    [data-testid="chat-message-container"].stChatMessage.st-emotion-cache-1c7v0u5.assistant .stMarkdownContainer {
+        border-bottom-left-radius: 8px; /* Tail effect for bot bubble */
+        border-bottom-right-radius: 25px; /* Adjust if needed */
+    }
+
+
+    /* Message content styling */
     .stChatMessage .stMarkdownContainer {
         padding: 14px 20px;
         border-radius: 25px;
@@ -221,13 +239,11 @@ st.markdown("""
     .stChatMessage.user .stMarkdownContainer {
         background: var(--user-bubble-bg);
         color: white;
-        border-bottom-right-radius: 8px; /* Tail effect */
     }
     .stChatMessage.assistant .stMarkdownContainer {
         background: var(--bot-bubble-bg);
         color: var(--text-color);
         border: 1px solid var(--border-color);
-        border-bottom-left-radius: 8px; /* Tail effect */
     }
 
     /* Input area */
@@ -237,7 +253,7 @@ st.markdown("""
         background-color: var(--input-bg);
         border-bottom-left-radius: 18px;
         border-bottom-right-radius: 18px;
-        margin-top: 0px !important; /* Remove space above input */
+        margin-top: 0px !important;
     }
 
     .stTextInput > div > div > input {
@@ -269,7 +285,7 @@ st.markdown("""
         margin-left: 12px;
     }
     .stButton > button:hover {
-        background: linear-gradient(90deg, var(--primary-color), #d2691e); /* Chocolate-like hover */
+        background: linear-gradient(90deg, var(--primary-color), #d2691e);
         transform: translateY(-2px);
         box-shadow: 0 7px 20px rgba(0,0,0,0.2);
     }
@@ -311,87 +327,76 @@ st.markdown("""
     .stMarkdown ol li {
         margin-bottom: 0.5em;
     }
-    /* Hide the Streamlit footer */
+    /* Hide the Streamlit footer and header */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-
-st.markdown('<div class="chat-header">Lezzetli Tarif Asistanı</div>', unsafe_allow_html=True)
+st.markdown('<div class="chat-header">Delicious Recipe Assistant</div>', unsafe_allow_html=True)
 
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    st.session_state.messages.append({"role": "assistant", "content": "Merhaba! Ben Lezzetli Tarif Asistanınızım. Mutfakta harikalar yaratmak için hangi malzemelerle yola çıkmak istersiniz? 😊"})
+    st.session_state.messages.append({"role": "assistant", "content": "Hello! I am your Delicious Recipe Assistant. What ingredients would you like to start with to create wonders in the kitchen? 😊"})
 
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
+    # Use different avatars or styling if needed, but the CSS handles the bubble alignment
     with st.chat_message(message["role"]):
         st.markdown(message["content"], unsafe_allow_html=True)
 
 # Main chat input
-if prompt := st.chat_input("Malzemeleri yazın (örn: tavuk, mantar, krema)..."):
+if prompt := st.chat_input("Enter ingredients (e.g., chicken, mushrooms, cream)..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Tarifleri düşünüyorum, birazdan hazırlarım..."):
-            user_input_tr = prompt.strip()
-            top_n_for_retrieval = 1 # Default to 1 recipe for simplicity, can be adjusted
+        with st.spinner("Thinking about recipes, I'll prepare them shortly..."):
+            user_input_en = prompt.strip() # Now directly using English input
 
-            if not user_input_tr:
-                st.markdown('Lütfen malzemeleri belirtin.')
+            if not user_input_en:
+                st.markdown('Please specify the ingredients.')
                 st.stop()
 
             # --- Intent Check ---
-            intent_prompt = f"Kullanıcının isteği: \"{user_input_tr}\". Bu istek yemek tarifi veya malzeme sorgusu ile ilgili mi? Sadece 'EVET' veya 'HAYIR' olarak yanıt ver."
+            intent_prompt = f"User's request: \"{user_input_en}\". Is this request related to a recipe or ingredient query? Answer only 'YES' or 'NO'."
             intent_response = call_gemini(intent_prompt)
             
-            if "HAYIR" in intent_response.upper():
-                st.markdown("Üzgünüm, ben sadece yemek tarifleri konusunda yardımcı olabiliyorum. Lütfen yemekle ilgili bir soru sorun. 🧑‍🍳")
-                st.session_state.messages.append({"role": "assistant", "content": "Üzgünüm, ben sadece yemek tarifleri konusunda yardımcı olabiliyorum. Lütfen yemekle ilgili bir soru sorun. 🧑‍🍳"})
+            if "NO" in intent_response.upper():
+                st.markdown("Sorry, I can only help with recipes. Please ask a food-related question. 🧑‍🍳")
+                st.session_state.messages.append({"role": "assistant", "content": "Sorry, I can only help with recipes. Please ask a food-related question. 🧑‍🍳"})
                 st.stop()
 
-            user_input_en = user_input_tr
-            if TRANSLATOR_AVAILABLE:
-                try:
-                    translated_text = translator.translate(user_input_tr, src='tr', dest='en').text
-                    user_input_en = translated_text
-                    st.sidebar.write(f"[TRANSLATION] TR: '{user_input_tr}' -> EN: '{user_input_en}'") # For debugging
-                except Exception as e:
-                    st.sidebar.warning(f"[TRANSLATION ERROR] Could not translate: {e}. Using original input for retrieval.")
-            else:
-                st.sidebar.warning("[TRANSLATION] Translator not available. Proceeding with original (Turkish) input for retrieval.")
-            
+            # Retrieve recipes using the English input
+            top_n_for_retrieval = 1 # Default to 1 recipe, can be adjusted
             recipes = retrieve_recipes(user_input_en, top_n=top_n_for_retrieval)
             
             context = ""
             if recipes.empty:
-                context = "Veritabanında kullanıcının belirttiği malzemelerle doğrudan eşleşen bir tarif bulunamadı."
+                context = "No recipe directly matching the user's ingredients was found in the database."
             else:
                 rows = []
                 for _, row in recipes.iterrows():
-                    # HTML etiketlerini doğrudan Gemini'nin çıktısında olmasını istediğimiz formatta ayarlıyoruz.
                     rows.append(
                         f"<h3>{row['Title']}</h3>"
-                        f"<b>Malzemeler:</b>\n<ul><li>" + "</li><li>".join(row['Ingredients'].split(', ')) + "</li></ul>\n"
-                        f"<b>Yapılışı:</b>\n<ol><li>" + "</li><li>".join(re.split(r'\d+\.\s*', str(row['Instructions']))[1:]) + "</li></ol>"
+                        f"<b>Ingredients:</b>\n<ul><li>" + "</li><li>".join(row['Ingredients'].split(', ')) + "</li></ul>\n"
+                        f"<b>Instructions:</b>\n<ol><li>" + "</li><li>".join(re.split(r'\d+\.\s*', str(row['Instructions']))[1:]) + "</li></ol>"
                     )
                 context = "\n<hr>\n".join(rows)
 
             if recipes.empty:
-                gemini_prompt = f"Kullanıcı şu malzemeleri belirtti: \"{user_input_tr}\"\n\n" \
-                                 f"Mevcut tarifler:\n{context}\n\n" \
-                                 f"Veritabanında bu malzemelerle eşleşen bir tarif bulunamadığı için, lütfen kullanıcıya bu durumu bildir ve bu malzemelerle hazırlanabilecek genel bir tarif fikri veya alternatif bir öneri sun. Yanıtını Türkçe, samimi ve motive edici bir dille ver. Lütfen HTML etiketleri (h3, b, ul, li, ol) kullanarak formatla."
+                gemini_prompt = f"The user specified these ingredients: \"{user_input_en}\"\n\n" \
+                                 f"Available recipes:\n{context}\n\n" \
+                                 f"Since no recipe matching these ingredients was found in the database, please inform the user about this and offer a general recipe idea or an alternative suggestion that can be prepared with these ingredients. Respond in English, with a friendly and motivating tone. Please format your response using HTML tags (h3, b, ul, li, ol)."
             else:
-                gemini_prompt = f"Kullanıcı şu malzemeleri belirtti: \"{user_input_tr}\"\n\n" \
-                                 f"Aşağıdaki mevcut tarifleri referans alarak kullanıcının malzemelerine en uygun tarifleri öner. Eğer tarifi aynen kullanırsan, lütfen verilen yapıyı koru. Eğer yeni bir fikir üretirsen, benzer formatta bir tarif oluştur.\n\n" \
-                                 f"Mevcut Tarifler:\n{context}\n\n" \
-                                 f"Lütfen yanıtını Türkçe, samimi ve motive edici bir dille ver. Tarifleri HTML etiketleri (h3 başlık için, b etiketleri 'Malzemeler:' ve 'Yapılışı:' için, ul/li malzeme listesi için, ol/li yapılış adımları için) kullanarak formatla. Gerekirse kısa ve sevimli bir giriş cümlesi kullanabilirsin. Örneğin: 'Harika bir seçim! Bu malzemelerle neler yapabiliriz bakalım...'" \
-                                 f"Sadece {top_n_for_retrieval} adet tarif öner."
+                gemini_prompt = f"The user specified these ingredients: \"{user_input_en}\"\n\n" \
+                                 f"Referring to the available recipes below, suggest the most suitable recipes for the user's ingredients. If you use a recipe as is, please maintain the given structure. If you generate a new idea, create a recipe in a similar format.\n\n" \
+                                 f"Available Recipes:\n{context}\n\n" \
+                                 f"Please respond in English, with a friendly and motivating tone. Format the recipes using HTML tags (h3 for title, b tags for 'Ingredients:' and 'Instructions:', ul/li for ingredient list, ol/li for steps). You can use a short and cheerful introductory sentence if needed. For example: 'Great choice! Let's see what we can make with these ingredients...'" \
+                                 f"Suggest only {top_n_for_retrieval} recipe(s)."
 
             generated_response = call_gemini(gemini_prompt)
             st.markdown(generated_response, unsafe_allow_html=True)
