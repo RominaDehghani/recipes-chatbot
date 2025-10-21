@@ -382,10 +382,13 @@ if prompt := st.chat_input("Enter ingredients (e.g., chicken, mushrooms, cream).
             intent_response = call_gemini(intent_prompt)
             
             if "NO" in intent_response.upper():
-                response_content = "Sorry, I can only help with recipes. Please ask a food-related question. 🧑‍🍳"
+                response_content = "Sorry, I can only help with recipes."
                 message_placeholder.markdown(response_content) # Display directly
                 st.session_state.messages.append({"role": "assistant", "content": response_content})
                 st.stop() # Stop further execution for this run
+                response_content = "Please ask a food-related question. 🧑‍🍳"
+                message_placeholder.markdown(response_content) # Display directly
+                st.session_state.messages.append({"role": "assistant", "content": response_content})
 
             # Retrieve recipes using the English input
             recipes = retrieve_recipes(user_input_en, top_n=requested_num_recipes)
