@@ -6,7 +6,7 @@ https://github.com/user-attachments/assets/ee3ee537-ce89-4d2e-9b2d-52308a3aec81
 
 # 🍲 Delicious Recipe Assistant
 
-This project implements an AI-powered recipe recommendation system utilizing Streamlit for the frontend, a pre-processed recipe dataset, and the Google Gemini API for intent recognition and generative recipe suggestions.
+This project implements an AI-powered recipe recommendation system leveraging a `Retrieval Augmented Generation (RAG)` architecture. It combines traditional NLP techniques for efficient information retrieval with the generative capabilities of Google Gemini.
 
 ## 🎯 Project Objective
 
@@ -32,10 +32,10 @@ The core of the recommendation system relies on a `13k-recipes.csv` dataset. Thi
 The system integrates several components and techniques:
 
 1.  **Frontend (Streamlit)**: Provides an interactive, chatbot-like web interface. Custom CSS is applied for aesthetic enhancements and chat bubble alignment.
-2.  **Natural Language Processing (NLP)**:
+2.  **Natural Language Processing (NLP) - Retrieval Component:**:
     *   **TF-IDF Vectorization (`TfidfVectorizer`)**: Transforms `Cleaned_Ingredients` from the dataset and user input into numerical TF-IDF feature vectors. This enables semantic comparison of ingredient lists.
     *   **Cosine Similarity**: Computes the cosine similarity between the user's input vector and the TF-IDF matrix of the recipe dataset (`X`), identifying the most semantically similar recipes.
-3.  **Google Gemini API (`gemini-2.5-flash`)**:
+3.  **Google Gemini API - Augmentation and Generation Component (`gemini-2.5-flash`)**:
     *   **Intent Recognition**: A prompt-based approach is used to classify user input as either a "recipe/ingredient query" or not. This ensures the assistant responds appropriately to non-recipe-related questions. The check involves looking for both "NO" and absence of "YES" in the Gemini response to improve robustness.
     *   **Generative Recipe Formulation**: When the retrieval component yields no direct matches, or when detailed guidance is required, Gemini generates a recipe by synthesizing information based on the user's input and optionally, the nearest available recipes. The output is formatted with HTML tags (`<h3>`, `<b>`, `<ul>`, `<ol>`) for structured presentation.
 4.  **Data Handling (Pandas)**: Utilized for efficient loading, cleaning, and manipulation of the recipe dataset.
